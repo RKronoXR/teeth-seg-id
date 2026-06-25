@@ -105,7 +105,7 @@ def main():
             pred_boxes = prediction["boxes"].cpu().numpy()
             pred_scores = prediction["scores"].cpu().numpy()
 
-            fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+            fig, axes = plt.subplots(1, 2, figsize=(16, 8), constrained_layout=True)
 
             overlay(
                 axes[0],
