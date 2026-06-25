@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data
+data/raw/
+data/interim/
+data/processed/
+data/external/
+
+# Outputs
+outputs/checkpoints/
+outputs/logs/
+outputs/predictions/
+outputs/figures/
+outputs/reports/
+
+# Large model files
+*.pth
+*.pt
+*.onnx
+*.engine
+*.safetensors
+
+# System
+.DS_Store
+Thumbs.db
+
+# Local system reports
+system_report.txt
+
+# Local checks
+system_check.sh

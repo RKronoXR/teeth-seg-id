@@ -1,0 +1,9 @@
+[project]
+name = "teeth-seg-id"
+version = "0.1.0"
+description = "Tooth instance segmentation and FDI identification in panoramic dental radiographs"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
