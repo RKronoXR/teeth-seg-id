@@ -21,7 +21,7 @@ def label_to_fdi(label):
     return FDI_CLASSES[int(label) - 1]
 
 
-def overlay(ax, image, masks, labels, boxes=None, scores=None, threshold=0.5, title=""):
+def overlay(ax, image, masks, labels, boxes=None, scores=None, threshold=0.5, title="", show_scores=False):
     ax.imshow(image)
     ax.set_title(title)
     ax.axis("off")
@@ -44,10 +44,18 @@ def overlay(ax, image, masks, labels, boxes=None, scores=None, threshold=0.5, ti
         if boxes is not None:
             x1, y1, x2, y2 = boxes[i]
             label = str(label_to_fdi(labels[i]))
-            if scores is not None:
-                label += f" {scores[i]:.2f}"
-            ax.text(x1, y1, label, fontsize=6, color="white",
-                    bbox=dict(facecolor="black", alpha=0.6, linewidth=0))
+            if scores is not None and show_scores:
+                label += f"\n{scores[i]:.2f}"
+            ax.text(
+                x1,
+                y1,
+                label,
+                fontsize=7,
+                color="white",
+                ha="center",
+                va="bottom",
+                bbox=dict(facecolor="black", alpha=0.6, linewidth=0),
+            )
 
 
 def main():
@@ -60,6 +68,7 @@ def main():
     parser.add_argument("--output-dir", default="outputs/figures/predictions", help="Directory for saved images.")
     parser.add_argument("--count", type=int, default=10, help="Number of images to visualize.")
     parser.add_argument("--threshold", type=float, default=0.5, help="Prediction score threshold.")
+    parser.add_argument("--show-scores", action="store_true", help="Show prediction confidence below tooth labels.")
     args = parser.parse_args()
 
     ann_file = f"data/processed/UFBA-425/coco/instances_{args.split}.json"
@@ -116,6 +125,7 @@ def main():
                 scores=pred_scores,
                 threshold=args.threshold,
                 title=f"Prediction threshold={args.threshold}",
+                show_scores=args.show_scores,
             )
 
             fig.tight_layout()
