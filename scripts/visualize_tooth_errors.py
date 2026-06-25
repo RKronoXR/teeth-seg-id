@@ -33,7 +33,7 @@ def mask_iou(a, b):
 def draw_mask(ax, image, mask, title):
     ax.imshow(image)
     ax.imshow(np.ma.masked_where(mask == 0, mask), alpha=0.45)
-    ax.set_title(title)
+    ax.set_title(title, fontsize=10, pad=14)
     ax.axis("off")
 
 
@@ -135,7 +135,7 @@ def main():
             fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
             axes[0].imshow(case["image"])
-            axes[0].set_title(f"Image {case['dataset_index']} | FDI {tooth}")
+            axes[0].set_title(f"Image {case['dataset_index']} | FDI {tooth}", fontsize=10, pad=14)
             axes[0].axis("off")
 
             draw_mask(axes[1], case["image"], case["gt_mask"], "Ground truth")
@@ -147,10 +147,10 @@ def main():
                 f"Prediction | IoU={case['iou']:.3f} | score={case['score']:.2f}",
             )
 
-            fig.tight_layout()
+            fig.tight_layout(rect=(0, 0, 1, 0.96), pad=2.0)
 
             out_path = tooth_dir / f"worst_{rank:02d}_idx_{case['dataset_index']}_iou_{case['iou']:.3f}.png"
-            fig.savefig(out_path, dpi=200)
+            fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.25)
             plt.close(fig)
 
             rows.append({

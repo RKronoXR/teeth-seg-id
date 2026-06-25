@@ -23,7 +23,7 @@ def label_to_fdi(label):
 
 def overlay(ax, image, masks, labels, boxes=None, scores=None, threshold=0.5, title="", show_scores=False):
     ax.imshow(image)
-    ax.set_title(title)
+    ax.set_title(title, fontsize=10, pad=14)
     ax.axis("off")
 
     for i, mask in enumerate(masks):
@@ -128,9 +128,9 @@ def main():
                 show_scores=args.show_scores,
             )
 
-            fig.tight_layout()
+            fig.tight_layout(rect=(0, 0, 1, 0.96), pad=2.0)
             out_path = output_dir / f"{args.split}_{idx:03d}.png"
-            fig.savefig(out_path, dpi=200)
+            fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.25)
             plt.close(fig)
 
             print(f"Saved {out_path}")
