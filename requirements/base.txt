@@ -1,0 +1,10 @@
+numpy
+pandas
+matplotlib
+pillow
+opencv-python-headless
+tqdm
+pyyaml
+rich
+scikit-learn
+pycocotools
