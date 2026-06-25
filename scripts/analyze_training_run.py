@@ -7,6 +7,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+
+def format_tooth(value):
+    text = str(value)
+    match = re.search(r"\d+", text)
+    return match.group(0) if match else text
+
+
 def parse_coco_eval(path):
     path = Path(path)
     if not path.exists():
@@ -183,11 +190,11 @@ def main():
 
         lines.append("Worst teeth by mask AP:")
         for _, row in worst.iterrows():
-            lines.append(f"- FDI **{int(row['FDI'])}**: mask AP **{row['mask_AP']:.3f}**, mask AP50 **{row['mask_AP50']:.3f}**, n={int(row['n_gt'])}")
+            lines.append(f"- FDI **{format_tooth(row['FDI'])}**: mask AP **{row['mask_AP']:.3f}**, mask AP50 **{row['mask_AP50']:.3f}**, n={int(row['n_gt'])}")
 
         lines.append("\nBest teeth by mask AP:")
         for _, row in best.iterrows():
-            lines.append(f"- FDI **{int(row['FDI'])}**: mask AP **{row['mask_AP']:.3f}**, mask AP50 **{row['mask_AP50']:.3f}**, n={int(row['n_gt'])}")
+            lines.append(f"- FDI **{format_tooth(row['FDI'])}**: mask AP **{row['mask_AP']:.3f}**, mask AP50 **{row['mask_AP50']:.3f}**, n={int(row['n_gt'])}")
 
     if args.tooth_errors_csv and Path(args.tooth_errors_csv).exists():
         err_df = pd.read_csv(args.tooth_errors_csv)
@@ -199,7 +206,7 @@ def main():
         if len(zero_iou) > 0:
             lines.append("IoU 0 cases among saved worst examples:")
             for tooth, count in zero_iou.items():
-                lines.append(f"- FDI **{int(tooth)}**: {int(count)} cases")
+                lines.append(f"- FDI **{format_tooth(tooth)}**: {int(count)} cases")
         else:
             lines.append("- No IoU 0 cases found among saved worst examples.")
 
