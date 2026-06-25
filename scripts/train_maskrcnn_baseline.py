@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument("--early-stop-patience", type=int, default=0)
+    parser.add_argument("--min-delta", type=float, default=0.0)
     args = parser.parse_args()
 
     if args.run_name is None:
@@ -62,17 +64,25 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     start_epoch = 1
+    best_loss = float("inf")
+    epochs_without_improvement = 0
+
     if args.resume:
         checkpoint = torch.load(args.resume, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        best_loss = checkpoint.get("best_loss", float("inf"))
+        epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
         print(f"Resuming from epoch {checkpoint['epoch']}")
 
     log_mode = "a" if args.resume else "w"
 
     with log_path.open(log_mode, newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["epoch", "step", "loss"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["epoch", "step", "loss", "mean_loss", "best_loss"],
+        )
 
         if not args.resume:
             writer.writeheader()
@@ -99,26 +109,61 @@ def main():
                     "epoch": epoch,
                     "step": step,
                     "loss": loss_value,
+                    "mean_loss": "",
+                    "best_loss": best_loss,
                 })
 
                 progress.set_postfix(loss=loss_value)
 
-            checkpoint_path = checkpoint_dir / f"epoch_{epoch}.pth"
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "run_name": args.run_name,
-                    "batch_size": args.batch_size,
-                    "lr": args.lr,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                },
-                checkpoint_path,
-            )
-
             mean_loss = running_loss / len(loader)
+
+            improved = mean_loss < (best_loss - args.min_delta)
+            if improved:
+                best_loss = mean_loss
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            checkpoint = {
+                "epoch": epoch,
+                "run_name": args.run_name,
+                "batch_size": args.batch_size,
+                "lr": args.lr,
+                "best_loss": best_loss,
+                "epochs_without_improvement": epochs_without_improvement,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            }
+
+            checkpoint_path = checkpoint_dir / f"epoch_{epoch}.pth"
+            torch.save(checkpoint, checkpoint_path)
+
+            if improved:
+                best_path = checkpoint_dir / "best_model.pth"
+                torch.save(checkpoint, best_path)
+                print(f"New best model saved: {best_path}")
+
+            writer.writerow({
+                "epoch": epoch,
+                "step": "epoch_end",
+                "loss": "",
+                "mean_loss": mean_loss,
+                "best_loss": best_loss,
+            })
+            f.flush()
+
             print(f"Epoch {epoch} mean loss: {mean_loss:.4f}")
             print(f"Saved checkpoint: {checkpoint_path}")
+
+            if args.early_stop_patience > 0:
+                print(
+                    f"Early stopping counter: "
+                    f"{epochs_without_improvement}/{args.early_stop_patience}"
+                )
+
+                if epochs_without_improvement >= args.early_stop_patience:
+                    print("Early stopping triggered")
+                    break
 
     print("Training OK")
 
