@@ -53,10 +53,15 @@ class UFBA425CocoDataset(torch.utils.data.Dataset):
         image_array = np.array(image, dtype=np.float32) / 255.0
         image = torch.from_numpy(image_array).permute(2, 0, 1)
 
+        if masks:
+            masks_tensor = torch.from_numpy(np.stack(masks).astype(np.uint8))
+        else:
+            masks_tensor = torch.zeros((0, img_info["height"], img_info["width"]), dtype=torch.uint8)
+
         target = {
-            "boxes": torch.as_tensor(boxes_xyxy, dtype=torch.float32),
+            "boxes": torch.as_tensor(boxes_xyxy, dtype=torch.float32).reshape(-1, 4),
             "labels": torch.as_tensor(labels, dtype=torch.int64),
-            "masks": torch.from_numpy(np.stack(masks).astype(np.uint8)),
+            "masks": masks_tensor,
             "image_id": torch.tensor([image_id]),
             "area": torch.as_tensor(areas, dtype=torch.float32),
             "iscrowd": torch.as_tensor(iscrowd, dtype=torch.int64),
