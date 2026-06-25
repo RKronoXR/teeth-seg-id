@@ -24,9 +24,10 @@ def parse_coco_eval(path):
 
     values = []
     for line in ap_lines:
-        match = re.search(r"=\s*(-?\d+\.\d+)", line)
-        if match:
-            values.append(float(match.group(1)))
+        try:
+            values.append(float(line.rsplit("=", 1)[1].strip()))
+        except (IndexError, ValueError):
+            pass
 
     if len(values) < 12:
         return None
