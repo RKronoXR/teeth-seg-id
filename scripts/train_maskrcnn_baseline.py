@@ -1,5 +1,6 @@
 import argparse
 import csv
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -19,12 +20,21 @@ def main():
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--run-name", type=str, default=None)
     args = parser.parse_args()
 
-    out_dir = Path("outputs/checkpoints/maskrcnn_baseline")
+    if args.run_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        lr_text = str(args.lr).replace(".", "p")
+        args.run_name = f"maskrcnn_b{args.batch_size}_lr{lr_text}_{timestamp}"
+
+    checkpoint_dir = Path("outputs/checkpoints") / args.run_name
     log_dir = Path("outputs/logs")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = log_dir / f"{args.run_name}_train_log.csv"
 
     dataset = UFBA425CocoDataset(
         ann_file="data/processed/UFBA-425/coco/instances_train.json",
@@ -51,15 +61,24 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    log_path = log_dir / "maskrcnn_baseline_train_log.csv"
+    start_epoch = 1
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+        print(f"Resuming from epoch {checkpoint['epoch']}")
 
-    with log_path.open("w", newline="") as f:
+    log_mode = "a" if args.resume else "w"
+
+    with log_path.open(log_mode, newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["epoch", "step", "loss"])
-        writer.writeheader()
 
-        for epoch in range(1, args.epochs + 1):
+        if not args.resume:
+            writer.writeheader()
+
+        for epoch in range(start_epoch, args.epochs + 1):
             running_loss = 0.0
-
             progress = tqdm(loader, desc=f"Epoch {epoch}/{args.epochs}")
 
             for step, (images, targets) in enumerate(progress, start=1):
@@ -84,10 +103,13 @@ def main():
 
                 progress.set_postfix(loss=loss_value)
 
-            checkpoint_path = out_dir / f"epoch_{epoch}.pth"
+            checkpoint_path = checkpoint_dir / f"epoch_{epoch}.pth"
             torch.save(
                 {
                     "epoch": epoch,
+                    "run_name": args.run_name,
+                    "batch_size": args.batch_size,
+                    "lr": args.lr,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                 },
