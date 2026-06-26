@@ -8,3 +8,4 @@ pyyaml
 rich
 scikit-learn
 pycocotools
+streamlit
