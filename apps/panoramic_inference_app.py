@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -100,6 +101,17 @@ def find_outputs(output_dir):
         "csv": csvs[0] if csvs else None,
         "report": reports[0] if reports else None,
     }
+
+
+def create_output_zip(output_dir):
+    zip_path = output_dir / f"{output_dir.name}.zip"
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for path in output_dir.rglob("*"):
+            if path.is_file() and path != zip_path:
+                z.write(path, path.relative_to(output_dir))
+
+    return zip_path
 
 
 def make_preview_image(image_path, max_width):
@@ -297,12 +309,14 @@ if run_button:
 
     st.subheader("Downloads")
 
-    download_cols = st.columns(4)
+    zip_path = create_output_zip(output_dir)
+
+    download_cols = st.columns(5)
 
     for col, label, path in zip(
         download_cols,
-        ["PNG", "JSON", "CSV", "Markdown report"],
-        [outputs["png"], outputs["json"], outputs["csv"], outputs["report"]],
+        ["PNG", "JSON", "CSV", "Markdown report", "Full ZIP"],
+        [outputs["png"], outputs["json"], outputs["csv"], outputs["report"], zip_path],
     ):
         with col:
             if path and path.exists():
