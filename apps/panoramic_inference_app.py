@@ -121,15 +121,20 @@ def render_prediction_image(image_path, display_mode, preview_width):
     encoded = image_to_base64(image_path)
 
     if display_mode == "Fixed width":
-        img_style = f"width: {preview_width}px; max-width: 100%;"
+        box_style = f"width: {preview_width}px;"
+        img_style = "width: 100%; max-width: 100%;"
     elif display_mode == "Fit page width":
+        box_style = "width: 100%;"
         img_style = "width: 100%; max-width: 100%;"
     else:
+        box_style = "width: 100%;"
         img_style = "width: auto; max-width: none;"
 
     html = f"""
-    <div class="prediction-scroll-box">
-        <img src="data:image/png;base64,{encoded}" style="{img_style}">
+    <div class="prediction-wrapper">
+        <div class="prediction-scroll-box" style="{box_style}">
+            <img src="data:image/png;base64,{encoded}" style="{img_style}">
+        </div>
     </div>
     """
 
@@ -144,18 +149,25 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .prediction-scroll-box {
+    .prediction-wrapper {
         width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+    }
+    .prediction-scroll-box {
+        max-width: 100%;
         max-height: 78vh;
         overflow: auto;
         border: 1px solid rgba(128, 128, 128, 0.35);
         border-radius: 8px;
         padding: 8px;
-        background: white;
+        background: transparent;
     }
     .prediction-scroll-box img {
         display: block;
         height: auto;
+        margin: 0 auto;
     }
     </style>
     """,
