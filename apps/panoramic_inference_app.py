@@ -250,6 +250,45 @@ def render_result_charts(df):
         )
 
 
+def render_tooth_review_panel(df):
+    if df.empty:
+        return
+
+    st.subheader("Interactive tooth review")
+
+    df = df.sort_values("fdi").copy()
+    fdi_options = df["fdi"].astype(int).tolist()
+
+    selected_fdi = st.selectbox(
+        "Select FDI tooth for detailed review",
+        fdi_options,
+    )
+
+    row = df[df["fdi"].astype(int) == int(selected_fdi)].iloc[0]
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("FDI", int(row["fdi"]))
+    col2.metric("Confidence", f"{row['score']:.3f}")
+    col3.metric("Mask area", int(row["mask_area_pixels"]))
+    col4.metric("Class ID", int(row["class_id"]))
+
+    st.write("Bounding box")
+    st.json({
+        "x1": float(row["bbox_x1"]),
+        "y1": float(row["bbox_y1"]),
+        "x2": float(row["bbox_x2"]),
+        "y2": float(row["bbox_y2"]),
+        "centroid_x": float(row["centroid_x"]),
+        "centroid_y": float(row["centroid_y"]),
+    })
+
+    mask_path = Path(str(row["mask_path"]))
+    if mask_path.exists():
+        st.image(str(mask_path), caption=f"Binary mask for FDI {int(row['fdi'])}", use_container_width=True)
+    else:
+        st.info("Mask file not found for preview.")
+
+
 st.set_page_config(
     page_title="Panoramic Tooth Segmentation",
     layout="wide",
@@ -398,6 +437,7 @@ if run_button:
         st.subheader("Predicted teeth table")
         df = pd.read_csv(outputs["csv"])
         st.dataframe(df, use_container_width=True)
+        render_tooth_review_panel(df)
         render_result_charts(df)
 
     if outputs["report"]:
