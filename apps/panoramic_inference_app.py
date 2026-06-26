@@ -105,6 +105,19 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stImage"] img {
+        max-width: 100%;
+        height: auto;
+        object-fit: contain;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("Panoramic Tooth Segmentation and FDI Identification")
 
 st.write(
@@ -159,6 +172,16 @@ with col3:
     show_scores = st.checkbox("Show scores", value=True)
     display_preprocessed = st.checkbox("Display preprocessed image", value=False)
 
+st.subheader("Display options")
+
+display_col1, display_col2 = st.columns(2)
+
+with display_col1:
+    fit_image_to_page = st.checkbox("Fit image to page width", value=False)
+
+with display_col2:
+    preview_width = st.slider("Preview width (px)", 400, 1600, 900, 50)
+
 run_button = st.button("Run inference", type="primary")
 
 if run_button:
@@ -199,7 +222,13 @@ if run_button:
 
     if outputs["png"]:
         st.subheader("Prediction")
-        st.image(str(outputs["png"]), use_container_width=True)
+
+        if fit_image_to_page:
+            st.image(str(outputs["png"]), use_container_width=True)
+        else:
+            st.image(str(outputs["png"]), width=preview_width)
+
+        st.caption("Use the preview width slider above if the image is too large or too small.")
 
     if outputs["csv"]:
         st.subheader("Predicted teeth table")
