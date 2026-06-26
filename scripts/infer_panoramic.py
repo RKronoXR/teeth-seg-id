@@ -27,41 +27,47 @@ def preprocess_image(original, method, clahe_clip, clahe_grid):
 
     if method == "none":
         out = gray
-
     elif method == "clahe":
         clahe = cv2.createCLAHE(
             clipLimit=clahe_clip,
             tileGridSize=(clahe_grid, clahe_grid),
         )
         out = clahe.apply(gray)
-
     elif method == "equalize":
         out = cv2.equalizeHist(gray)
-
     else:
         raise ValueError(f"Unknown preprocessing method: {method}")
 
     return Image.fromarray(out).convert("RGB")
 
 
-def load_image(path, img_size, preprocess, clahe_clip, clahe_grid):
+def image_to_tensor_and_np(image):
+    image_np = np.asarray(image).astype(np.float32) / 255.0
+    image_tensor = torch.from_numpy(image_np).permute(2, 0, 1)
+    return image_tensor, image_np
+
+
+def load_image(path, img_size, preprocess, clahe_clip, clahe_grid, display_preprocessed):
     original = Image.open(path).convert("RGB")
     original_size = original.size
 
-    image = preprocess_image(
+    inference_image = preprocess_image(
         original=original,
         method=preprocess,
         clahe_clip=clahe_clip,
         clahe_grid=clahe_grid,
     )
 
+    display_image = inference_image if display_preprocessed else original
+
     if img_size > 0:
-        image = image.resize((img_size, img_size), Image.BILINEAR)
+        inference_image = inference_image.resize((img_size, img_size), Image.BILINEAR)
+        display_image = display_image.resize((img_size, img_size), Image.BILINEAR)
 
-    image_np = np.asarray(image).astype(np.float32) / 255.0
-    image_tensor = torch.from_numpy(image_np).permute(2, 0, 1)
+    image_tensor, inference_np = image_to_tensor_and_np(inference_image)
+    display_np = np.asarray(display_image).astype(np.float32) / 255.0
 
-    return image_tensor, image_np, original_size, image.size
+    return image_tensor, inference_np, display_np, original_size, inference_image.size
 
 
 def load_model(checkpoint_path, device):
@@ -116,9 +122,9 @@ def get_kept_indices(prediction, threshold, min_mask_area, keep_best_per_fdi):
     return [c["index"] for c in kept]
 
 
-def make_overlay(image_np, prediction, kept_indices, show_scores, output_path):
+def make_overlay(display_np, prediction, kept_indices, show_scores, output_path):
     fig, ax = plt.subplots(figsize=(10, 10), constrained_layout=True)
-    ax.imshow(image_np)
+    ax.imshow(display_np)
     ax.axis("off")
     ax.set_title("Tooth segmentation and FDI identification", fontsize=12, pad=18)
 
@@ -165,7 +171,7 @@ def make_overlay(image_np, prediction, kept_indices, show_scores, output_path):
     plt.close(fig)
 
 
-def prediction_to_json(image_path, prediction, kept_indices, threshold, original_size, model_input_size, preprocess):
+def prediction_to_json(image_path, prediction, kept_indices, args, original_size, model_input_size):
     boxes = prediction["boxes"].detach().cpu().numpy()
     labels = prediction["labels"].detach().cpu().numpy()
     scores = prediction["scores"].detach().cpu().numpy()
@@ -202,20 +208,24 @@ def prediction_to_json(image_path, prediction, kept_indices, threshold, original
         "image": str(image_path),
         "original_size_xy": list(original_size),
         "model_input_size_xy": list(model_input_size),
-        "preprocess": preprocess,
-        "threshold": threshold,
+        "preprocess": args.preprocess,
+        "display": "preprocessed" if args.display_preprocessed else "original",
+        "threshold": args.threshold,
+        "min_mask_area": args.min_mask_area,
+        "keep_best_per_fdi": args.keep_best_per_fdi,
         "n_predictions": len(items),
         "predictions": items,
     }
 
 
 def infer_one(model, image_path, output_dir, device, args):
-    image_tensor, image_np, original_size, model_input_size = load_image(
+    image_tensor, inference_np, display_np, original_size, model_input_size = load_image(
         path=image_path,
         img_size=args.img_size,
         preprocess=args.preprocess,
         clahe_clip=args.clahe_clip,
         clahe_grid=args.clahe_grid,
+        display_preprocessed=args.display_preprocessed,
     )
 
     with torch.no_grad():
@@ -229,12 +239,13 @@ def infer_one(model, image_path, output_dir, device, args):
     )
 
     stem = Path(image_path).stem
-    suffix = f"{args.preprocess}_thr{args.threshold}"
+    display_name = "display_preprocessed" if args.display_preprocessed else "display_original"
+    suffix = f"{args.preprocess}_thr{args.threshold}_{display_name}"
     overlay_path = output_dir / f"{stem}_{suffix}_prediction.png"
     json_path = output_dir / f"{stem}_{suffix}_prediction.json"
 
     make_overlay(
-        image_np=image_np,
+        display_np=display_np,
         prediction=prediction,
         kept_indices=kept_indices,
         show_scores=args.show_scores,
@@ -245,16 +256,16 @@ def infer_one(model, image_path, output_dir, device, args):
         image_path=image_path,
         prediction=prediction,
         kept_indices=kept_indices,
-        threshold=args.threshold,
+        args=args,
         original_size=original_size,
         model_input_size=model_input_size,
-        preprocess=args.preprocess,
     )
 
     json_path.write_text(json.dumps(result, indent=2))
 
     print(f"Image: {image_path}")
-    print(f"Preprocess: {args.preprocess}")
+    print(f"Preprocess for inference: {args.preprocess}")
+    print(f"Display image: {'preprocessed' if args.display_preprocessed else 'original'}")
     print(f"Predictions kept: {len(kept_indices)}")
     print(f"Saved image: {overlay_path}")
     print(f"Saved JSON: {json_path}")
@@ -291,7 +302,8 @@ def main():
     parser.add_argument("--show-scores", action="store_true", help="Show confidence score below FDI label.")
     parser.add_argument("--min-mask-area", type=int, default=100, help="Discard predictions with mask area below this value.")
     parser.add_argument("--keep-best-per-fdi", action="store_true", help="Keep only the highest-scoring prediction for each FDI tooth number.")
-    parser.add_argument("--preprocess", choices=["none", "clahe", "equalize"], default="none", help="Optional image preprocessing.")
+    parser.add_argument("--preprocess", choices=["none", "clahe", "equalize"], default="none", help="Optional preprocessing for model inference.")
+    parser.add_argument("--display-preprocessed", action="store_true", help="Draw results over the preprocessed image instead of the original image.")
     parser.add_argument("--clahe-clip", type=float, default=2.0, help="CLAHE clip limit.")
     parser.add_argument("--clahe-grid", type=int, default=8, help="CLAHE tile grid size.")
 
