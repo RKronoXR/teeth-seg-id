@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -98,6 +99,17 @@ def find_outputs(output_dir):
         "csv": csvs[0] if csvs else None,
         "report": reports[0] if reports else None,
     }
+
+
+def make_preview_image(image_path, max_width):
+    image = Image.open(image_path).convert("RGB")
+    width, height = image.size
+
+    if width <= max_width:
+        return image
+
+    new_height = int(height * (max_width / width))
+    return image.resize((max_width, new_height), Image.LANCZOS)
 
 
 st.set_page_config(
@@ -226,9 +238,10 @@ if run_button:
         if fit_image_to_page:
             st.image(str(outputs["png"]), use_container_width=True)
         else:
-            st.image(str(outputs["png"]), width=preview_width)
+            preview_image = make_preview_image(outputs["png"], preview_width)
+            st.image(preview_image)
 
-        st.caption("Use the preview width slider above if the image is too large or too small.")
+        st.caption("Turn off 'Fit image to page width' and adjust 'Preview width' if the image is too large.")
 
     if outputs["csv"]:
         st.subheader("Predicted teeth table")
