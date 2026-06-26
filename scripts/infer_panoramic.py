@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -21,14 +22,41 @@ def label_to_fdi(label):
     return FDI_CLASSES[int(label) - 1]
 
 
-def load_image(path, img_size):
+def preprocess_image(original, method, clahe_clip, clahe_grid):
+    gray = np.asarray(original.convert("L"))
+
+    if method == "none":
+        out = gray
+
+    elif method == "clahe":
+        clahe = cv2.createCLAHE(
+            clipLimit=clahe_clip,
+            tileGridSize=(clahe_grid, clahe_grid),
+        )
+        out = clahe.apply(gray)
+
+    elif method == "equalize":
+        out = cv2.equalizeHist(gray)
+
+    else:
+        raise ValueError(f"Unknown preprocessing method: {method}")
+
+    return Image.fromarray(out).convert("RGB")
+
+
+def load_image(path, img_size, preprocess, clahe_clip, clahe_grid):
     original = Image.open(path).convert("RGB")
     original_size = original.size
 
+    image = preprocess_image(
+        original=original,
+        method=preprocess,
+        clahe_clip=clahe_clip,
+        clahe_grid=clahe_grid,
+    )
+
     if img_size > 0:
-        image = original.resize((img_size, img_size), Image.BILINEAR)
-    else:
-        image = original
+        image = image.resize((img_size, img_size), Image.BILINEAR)
 
     image_np = np.asarray(image).astype(np.float32) / 255.0
     image_tensor = torch.from_numpy(image_np).permute(2, 0, 1)
@@ -137,7 +165,7 @@ def make_overlay(image_np, prediction, kept_indices, show_scores, output_path):
     plt.close(fig)
 
 
-def prediction_to_json(image_path, prediction, kept_indices, threshold, original_size, model_input_size):
+def prediction_to_json(image_path, prediction, kept_indices, threshold, original_size, model_input_size, preprocess):
     boxes = prediction["boxes"].detach().cpu().numpy()
     labels = prediction["labels"].detach().cpu().numpy()
     scores = prediction["scores"].detach().cpu().numpy()
@@ -174,34 +202,42 @@ def prediction_to_json(image_path, prediction, kept_indices, threshold, original
         "image": str(image_path),
         "original_size_xy": list(original_size),
         "model_input_size_xy": list(model_input_size),
+        "preprocess": preprocess,
         "threshold": threshold,
         "n_predictions": len(items),
         "predictions": items,
     }
 
 
-def infer_one(model, image_path, output_dir, device, img_size, threshold, show_scores, min_mask_area, keep_best_per_fdi):
-    image_tensor, image_np, original_size, model_input_size = load_image(image_path, img_size)
+def infer_one(model, image_path, output_dir, device, args):
+    image_tensor, image_np, original_size, model_input_size = load_image(
+        path=image_path,
+        img_size=args.img_size,
+        preprocess=args.preprocess,
+        clahe_clip=args.clahe_clip,
+        clahe_grid=args.clahe_grid,
+    )
 
     with torch.no_grad():
         prediction = model([image_tensor.to(device)])[0]
 
     kept_indices = get_kept_indices(
         prediction=prediction,
-        threshold=threshold,
-        min_mask_area=min_mask_area,
-        keep_best_per_fdi=keep_best_per_fdi,
+        threshold=args.threshold,
+        min_mask_area=args.min_mask_area,
+        keep_best_per_fdi=args.keep_best_per_fdi,
     )
 
     stem = Path(image_path).stem
-    overlay_path = output_dir / f"{stem}_prediction.png"
-    json_path = output_dir / f"{stem}_prediction.json"
+    suffix = f"{args.preprocess}_thr{args.threshold}"
+    overlay_path = output_dir / f"{stem}_{suffix}_prediction.png"
+    json_path = output_dir / f"{stem}_{suffix}_prediction.json"
 
     make_overlay(
         image_np=image_np,
         prediction=prediction,
         kept_indices=kept_indices,
-        show_scores=show_scores,
+        show_scores=args.show_scores,
         output_path=overlay_path,
     )
 
@@ -209,14 +245,16 @@ def infer_one(model, image_path, output_dir, device, img_size, threshold, show_s
         image_path=image_path,
         prediction=prediction,
         kept_indices=kept_indices,
-        threshold=threshold,
+        threshold=args.threshold,
         original_size=original_size,
         model_input_size=model_input_size,
+        preprocess=args.preprocess,
     )
 
     json_path.write_text(json.dumps(result, indent=2))
 
     print(f"Image: {image_path}")
+    print(f"Preprocess: {args.preprocess}")
     print(f"Predictions kept: {len(kept_indices)}")
     print(f"Saved image: {overlay_path}")
     print(f"Saved JSON: {json_path}")
@@ -253,6 +291,9 @@ def main():
     parser.add_argument("--show-scores", action="store_true", help="Show confidence score below FDI label.")
     parser.add_argument("--min-mask-area", type=int, default=100, help="Discard predictions with mask area below this value.")
     parser.add_argument("--keep-best-per-fdi", action="store_true", help="Keep only the highest-scoring prediction for each FDI tooth number.")
+    parser.add_argument("--preprocess", choices=["none", "clahe", "equalize"], default="none", help="Optional image preprocessing.")
+    parser.add_argument("--clahe-clip", type=float, default=2.0, help="CLAHE clip limit.")
+    parser.add_argument("--clahe-grid", type=int, default=8, help="CLAHE tile grid size.")
 
     args = parser.parse_args()
 
@@ -273,11 +314,7 @@ def main():
             image_path=image_path,
             output_dir=output_dir,
             device=device,
-            img_size=args.img_size,
-            threshold=args.threshold,
-            show_scores=args.show_scores,
-            min_mask_area=args.min_mask_area,
-            keep_best_per_fdi=args.keep_best_per_fdi,
+            args=args,
         )
 
 
