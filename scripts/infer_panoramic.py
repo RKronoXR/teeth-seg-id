@@ -51,7 +51,44 @@ def load_model(checkpoint_path, device):
     return model
 
 
-def make_overlay(image_np, prediction, threshold, show_scores, output_path):
+def get_kept_indices(prediction, threshold, min_mask_area, keep_best_per_fdi):
+    labels = prediction["labels"].detach().cpu().numpy()
+    scores = prediction["scores"].detach().cpu().numpy()
+    masks = prediction["masks"].squeeze(1).detach().cpu().numpy()
+
+    candidates = []
+
+    for i, (label, score, mask) in enumerate(zip(labels, scores, masks)):
+        binary_mask = mask >= 0.5
+        area = int(binary_mask.sum())
+
+        if score < threshold:
+            continue
+
+        if area < min_mask_area:
+            continue
+
+        candidates.append({
+            "index": i,
+            "fdi": label_to_fdi(label),
+            "score": float(score),
+            "area": area,
+        })
+
+    if not keep_best_per_fdi:
+        return [c["index"] for c in candidates]
+
+    best_by_fdi = {}
+    for c in candidates:
+        fdi = c["fdi"]
+        if fdi not in best_by_fdi or c["score"] > best_by_fdi[fdi]["score"]:
+            best_by_fdi[fdi] = c
+
+    kept = sorted(best_by_fdi.values(), key=lambda x: x["fdi"])
+    return [c["index"] for c in kept]
+
+
+def make_overlay(image_np, prediction, kept_indices, show_scores, output_path):
     fig, ax = plt.subplots(figsize=(10, 10), constrained_layout=True)
     ax.imshow(image_np)
     ax.axis("off")
@@ -62,27 +99,26 @@ def make_overlay(image_np, prediction, threshold, show_scores, output_path):
     labels = prediction["labels"].detach().cpu().numpy()
     scores = prediction["scores"].detach().cpu().numpy()
 
-    kept = 0
-
-    for i, (mask, box, label, score) in enumerate(zip(masks, boxes, labels, scores)):
-        if score < threshold:
-            continue
+    for rank, i in enumerate(kept_indices):
+        mask = masks[i]
+        box = boxes[i]
+        label = labels[i]
+        score = scores[i]
 
         binary_mask = mask >= 0.5
         if binary_mask.sum() == 0:
             continue
 
         overlay = np.zeros((*binary_mask.shape, 4), dtype=float)
-        overlay[..., 0] = (i * 37 % 255) / 255
-        overlay[..., 1] = (i * 67 % 255) / 255
-        overlay[..., 2] = (i * 97 % 255) / 255
+        overlay[..., 0] = (rank * 37 % 255) / 255
+        overlay[..., 1] = (rank * 67 % 255) / 255
+        overlay[..., 2] = (rank * 97 % 255) / 255
         overlay[..., 3] = binary_mask * 0.35
         ax.imshow(overlay)
 
         x1, y1, x2, y2 = box
-        fdi = label_to_fdi(label)
+        text = str(label_to_fdi(label))
 
-        text = str(fdi)
         if show_scores:
             text += f"\n{score:.2f}"
 
@@ -97,15 +133,11 @@ def make_overlay(image_np, prediction, threshold, show_scores, output_path):
             bbox=dict(facecolor="black", alpha=0.65, linewidth=0),
         )
 
-        kept += 1
-
     fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0.35)
     plt.close(fig)
 
-    return kept
 
-
-def prediction_to_json(image_path, prediction, threshold, original_size, model_input_size):
+def prediction_to_json(image_path, prediction, kept_indices, threshold, original_size, model_input_size):
     boxes = prediction["boxes"].detach().cpu().numpy()
     labels = prediction["labels"].detach().cpu().numpy()
     scores = prediction["scores"].detach().cpu().numpy()
@@ -113,15 +145,14 @@ def prediction_to_json(image_path, prediction, threshold, original_size, model_i
 
     items = []
 
-    for box, label, score, mask in zip(boxes, labels, scores, masks):
-        if score < threshold:
-            continue
+    for i in kept_indices:
+        box = boxes[i]
+        label = labels[i]
+        score = scores[i]
+        mask = masks[i]
 
         binary_mask = mask >= 0.5
         area = int(binary_mask.sum())
-
-        if area == 0:
-            continue
 
         ys, xs = np.where(binary_mask)
         centroid_x = float(xs.mean()) if len(xs) else None
@@ -149,20 +180,27 @@ def prediction_to_json(image_path, prediction, threshold, original_size, model_i
     }
 
 
-def infer_one(model, image_path, output_dir, device, img_size, threshold, show_scores):
+def infer_one(model, image_path, output_dir, device, img_size, threshold, show_scores, min_mask_area, keep_best_per_fdi):
     image_tensor, image_np, original_size, model_input_size = load_image(image_path, img_size)
 
     with torch.no_grad():
         prediction = model([image_tensor.to(device)])[0]
 
+    kept_indices = get_kept_indices(
+        prediction=prediction,
+        threshold=threshold,
+        min_mask_area=min_mask_area,
+        keep_best_per_fdi=keep_best_per_fdi,
+    )
+
     stem = Path(image_path).stem
     overlay_path = output_dir / f"{stem}_prediction.png"
     json_path = output_dir / f"{stem}_prediction.json"
 
-    kept = make_overlay(
+    make_overlay(
         image_np=image_np,
         prediction=prediction,
-        threshold=threshold,
+        kept_indices=kept_indices,
         show_scores=show_scores,
         output_path=overlay_path,
     )
@@ -170,6 +208,7 @@ def infer_one(model, image_path, output_dir, device, img_size, threshold, show_s
     result = prediction_to_json(
         image_path=image_path,
         prediction=prediction,
+        kept_indices=kept_indices,
         threshold=threshold,
         original_size=original_size,
         model_input_size=model_input_size,
@@ -178,7 +217,7 @@ def infer_one(model, image_path, output_dir, device, img_size, threshold, show_s
     json_path.write_text(json.dumps(result, indent=2))
 
     print(f"Image: {image_path}")
-    print(f"Predictions kept: {kept}")
+    print(f"Predictions kept: {len(kept_indices)}")
     print(f"Saved image: {overlay_path}")
     print(f"Saved JSON: {json_path}")
 
@@ -212,6 +251,8 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.5, help="Prediction score threshold.")
     parser.add_argument("--img-size", type=int, default=640, help="Resize image to this square size. Use 0 to keep original size.")
     parser.add_argument("--show-scores", action="store_true", help="Show confidence score below FDI label.")
+    parser.add_argument("--min-mask-area", type=int, default=100, help="Discard predictions with mask area below this value.")
+    parser.add_argument("--keep-best-per-fdi", action="store_true", help="Keep only the highest-scoring prediction for each FDI tooth number.")
 
     args = parser.parse_args()
 
@@ -235,6 +276,8 @@ def main():
             img_size=args.img_size,
             threshold=args.threshold,
             show_scores=args.show_scores,
+            min_mask_area=args.min_mask_area,
+            keep_best_per_fdi=args.keep_best_per_fdi,
         )
 
 
