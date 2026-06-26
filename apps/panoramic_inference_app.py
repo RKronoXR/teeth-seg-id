@@ -153,6 +153,103 @@ def render_prediction_image(image_path, display_mode, preview_width):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def prepare_results_dataframe(df):
+    df = df.copy()
+    df["fdi"] = df["fdi"].astype(int)
+    df["tooth"] = df["fdi"].astype(str)
+    df["quadrant"] = df["tooth"].str[0].map({
+        "1": "Q1 upper right",
+        "2": "Q2 upper left",
+        "3": "Q3 lower left",
+        "4": "Q4 lower right",
+    })
+    df["confidence_band"] = pd.cut(
+        df["score"],
+        bins=[0.0, 0.65, 0.85, 1.01],
+        labels=["Low <0.65", "Medium 0.65-0.85", "High ≥0.85"],
+        include_lowest=True,
+        right=False,
+    )
+    return df
+
+
+def render_result_charts(df):
+    if df.empty:
+        st.warning("No predictions available for charts.")
+        return
+
+    df = prepare_results_dataframe(df)
+
+    st.subheader("Result charts")
+
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+
+    with metric_col1:
+        st.metric("Detected teeth", len(df))
+
+    with metric_col2:
+        st.metric("Mean confidence", f"{df['score'].mean():.2f}")
+
+    with metric_col3:
+        st.metric("Lowest confidence", f"{df['score'].min():.2f}")
+
+    with metric_col4:
+        low_count = int((df["score"] < 0.75).sum())
+        st.metric("Teeth <0.75", low_count)
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        st.markdown("#### Confidence by FDI")
+        score_chart = (
+            df.sort_values("fdi")
+            .set_index("tooth")[["score"]]
+        )
+        st.bar_chart(score_chart, use_container_width=True)
+
+    with chart_col2:
+        st.markdown("#### Mask area by FDI")
+        area_chart = (
+            df.sort_values("fdi")
+            .set_index("tooth")[["mask_area_pixels"]]
+        )
+        st.bar_chart(area_chart, use_container_width=True)
+
+    chart_col3, chart_col4 = st.columns(2)
+
+    with chart_col3:
+        st.markdown("#### Detected teeth by quadrant")
+        quadrant_chart = (
+            df.groupby("quadrant", observed=False)
+            .size()
+            .rename("count")
+            .to_frame()
+        )
+        st.bar_chart(quadrant_chart, use_container_width=True)
+
+    with chart_col4:
+        st.markdown("#### Confidence distribution")
+        confidence_chart = (
+            df.groupby("confidence_band", observed=False)
+            .size()
+            .rename("count")
+            .to_frame()
+        )
+        st.bar_chart(confidence_chart, use_container_width=True)
+
+    low_confidence = df[df["score"] < 0.75].sort_values("score")
+
+    if not low_confidence.empty:
+        st.markdown("#### Teeth requiring review")
+        st.write("These predictions have confidence below 0.75.")
+        st.dataframe(
+            low_confidence[
+                ["fdi", "score", "mask_area_pixels", "centroid_x", "centroid_y"]
+            ],
+            use_container_width=True,
+        )
+
+
 st.set_page_config(
     page_title="Panoramic Tooth Segmentation",
     layout="wide",
@@ -301,6 +398,7 @@ if run_button:
         st.subheader("Predicted teeth table")
         df = pd.read_csv(outputs["csv"])
         st.dataframe(df, use_container_width=True)
+        render_result_charts(df)
 
     if outputs["report"]:
         st.subheader("Report")
