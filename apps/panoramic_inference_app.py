@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import subprocess
@@ -112,6 +113,29 @@ def make_preview_image(image_path, max_width):
     return image.resize((max_width, new_height), Image.LANCZOS)
 
 
+def image_to_base64(image_path):
+    return base64.b64encode(Path(image_path).read_bytes()).decode("utf-8")
+
+
+def render_prediction_image(image_path, display_mode, preview_width):
+    encoded = image_to_base64(image_path)
+
+    if display_mode == "Fixed width":
+        img_style = f"width: {preview_width}px; max-width: 100%;"
+    elif display_mode == "Fit page width":
+        img_style = "width: 100%; max-width: 100%;"
+    else:
+        img_style = "width: auto; max-width: none;"
+
+    html = f"""
+    <div class="prediction-scroll-box">
+        <img src="data:image/png;base64,{encoded}" style="{img_style}">
+    </div>
+    """
+
+    st.markdown(html, unsafe_allow_html=True)
+
+
 st.set_page_config(
     page_title="Panoramic Tooth Segmentation",
     layout="wide",
@@ -120,10 +144,18 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    [data-testid="stImage"] img {
-        max-width: 100%;
+    .prediction-scroll-box {
+        width: 100%;
+        max-height: 78vh;
+        overflow: auto;
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        border-radius: 8px;
+        padding: 8px;
+        background: white;
+    }
+    .prediction-scroll-box img {
+        display: block;
         height: auto;
-        object-fit: contain;
     }
     </style>
     """,
@@ -189,10 +221,14 @@ st.subheader("Display options")
 display_col1, display_col2 = st.columns(2)
 
 with display_col1:
-    fit_image_to_page = st.checkbox("Fit image to page width", value=False)
+    display_mode = st.selectbox(
+        "Prediction display mode",
+        ["Fixed width", "Fit page width", "Scrollable original"],
+        index=0,
+    )
 
 with display_col2:
-    preview_width = st.slider("Preview width (px)", 400, 1600, 900, 50)
+    preview_width = st.slider("Preview width (px)", 400, 1600, 850, 50)
 
 run_button = st.button("Run inference", type="primary")
 
@@ -234,14 +270,8 @@ if run_button:
 
     if outputs["png"]:
         st.subheader("Prediction")
-
-        if fit_image_to_page:
-            st.image(str(outputs["png"]), use_container_width=True)
-        else:
-            preview_image = make_preview_image(outputs["png"], preview_width)
-            st.image(preview_image)
-
-        st.caption("Turn off 'Fit image to page width' and adjust 'Preview width' if the image is too large.")
+        render_prediction_image(outputs["png"], display_mode, preview_width)
+        st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
 
     if outputs["csv"]:
         st.subheader("Predicted teeth table")
