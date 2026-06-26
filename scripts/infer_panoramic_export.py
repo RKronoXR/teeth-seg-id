@@ -42,6 +42,40 @@ def preprocess_image(original, method, clahe_clip, clahe_grid):
     return Image.fromarray(out).convert("RGB")
 
 
+def letterbox_image(image, img_size):
+    original_w, original_h = image.size
+
+    if img_size <= 0:
+        return image, {
+            "resize_mode": "original",
+            "scale": 1.0,
+            "pad_x": 0,
+            "pad_y": 0,
+            "resized_size_xy": [original_w, original_h],
+            "model_input_size_xy": [original_w, original_h],
+        }
+
+    scale = min(img_size / original_w, img_size / original_h)
+    resized_w = int(round(original_w * scale))
+    resized_h = int(round(original_h * scale))
+
+    resized = image.resize((resized_w, resized_h), Image.BILINEAR)
+    canvas = Image.new("RGB", (img_size, img_size), color=(0, 0, 0))
+
+    pad_x = (img_size - resized_w) // 2
+    pad_y = (img_size - resized_h) // 2
+    canvas.paste(resized, (pad_x, pad_y))
+
+    return canvas, {
+        "resize_mode": "letterbox",
+        "scale": float(scale),
+        "pad_x": int(pad_x),
+        "pad_y": int(pad_y),
+        "resized_size_xy": [resized_w, resized_h],
+        "model_input_size_xy": [img_size, img_size],
+    }
+
+
 def load_image(path, img_size, preprocess, clahe_clip, clahe_grid, display_preprocessed):
     original = Image.open(path).convert("RGB")
     original_size = original.size
@@ -54,16 +88,54 @@ def load_image(path, img_size, preprocess, clahe_clip, clahe_grid, display_prepr
     )
 
     display_image = inference_image if display_preprocessed else original
-
-    if img_size > 0:
-        inference_image = inference_image.resize((img_size, img_size), Image.BILINEAR)
-        display_image = display_image.resize((img_size, img_size), Image.BILINEAR)
+    inference_image, resize_metadata = letterbox_image(inference_image, img_size)
 
     inference_np = np.asarray(inference_image).astype(np.float32) / 255.0
     display_np = np.asarray(display_image).astype(np.float32) / 255.0
     image_tensor = torch.from_numpy(inference_np).permute(2, 0, 1)
 
-    return image_tensor, display_np, original_size, inference_image.size
+    resize_metadata["original_size_xy"] = list(original_size)
+
+    return image_tensor, display_np, original_size, inference_image.size, resize_metadata
+
+
+def restore_prediction_to_original(prediction, original_size, resize_metadata):
+    if resize_metadata["resize_mode"] == "original":
+        return prediction
+
+    original_w, original_h = original_size
+    scale = resize_metadata["scale"]
+    pad_x = resize_metadata["pad_x"]
+    pad_y = resize_metadata["pad_y"]
+    resized_w, resized_h = resize_metadata["resized_size_xy"]
+
+    restored = dict(prediction)
+
+    boxes = prediction["boxes"].detach().cpu().clone()
+    boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad_x) / scale
+    boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad_y) / scale
+    boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, original_w)
+    boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, original_h)
+    restored["boxes"] = boxes
+
+    masks = prediction["masks"].detach().cpu().numpy()
+    restored_masks = []
+
+    for mask in masks:
+        mask_2d = mask[0]
+        cropped = mask_2d[pad_y:pad_y + resized_h, pad_x:pad_x + resized_w]
+        resized = cv2.resize(cropped, (original_w, original_h), interpolation=cv2.INTER_LINEAR)
+        restored_masks.append(resized[None, :, :])
+
+    if restored_masks:
+        restored["masks"] = torch.from_numpy(np.stack(restored_masks)).float()
+    else:
+        restored["masks"] = torch.empty((0, 1, original_h, original_w), dtype=torch.float32)
+
+    restored["labels"] = prediction["labels"].detach().cpu()
+    restored["scores"] = prediction["scores"].detach().cpu()
+
+    return restored
 
 
 def load_model(checkpoint_path, device):
@@ -190,7 +262,7 @@ def make_overlay(display_np, prediction, kept_indices, show_scores, output_path)
     plt.close(fig)
 
 
-def build_results(image_path, prediction, kept_indices, args, original_size, model_input_size, mask_paths):
+def build_results(image_path, prediction, kept_indices, args, original_size, model_input_size, mask_paths, resize_metadata):
     boxes = prediction["boxes"].detach().cpu().numpy()
     labels = prediction["labels"].detach().cpu().numpy()
     scores = prediction["scores"].detach().cpu().numpy()
@@ -228,6 +300,7 @@ def build_results(image_path, prediction, kept_indices, args, original_size, mod
         "image": str(image_path),
         "original_size_xy": list(original_size),
         "model_input_size_xy": list(model_input_size),
+        "resize_metadata": resize_metadata,
         "preprocess": args.preprocess,
         "display": "preprocessed" if args.display_preprocessed else "original",
         "threshold": args.threshold,
@@ -314,7 +387,7 @@ def save_report(results, overlay_path, json_path, csv_path, report_path):
 
 
 def infer_one(model, image_path, output_dir, device, args):
-    image_tensor, display_np, original_size, model_input_size = load_image(
+    image_tensor, display_np, original_size, model_input_size, resize_metadata = load_image(
         path=image_path,
         img_size=args.img_size,
         preprocess=args.preprocess,
@@ -325,6 +398,12 @@ def infer_one(model, image_path, output_dir, device, args):
 
     with torch.no_grad():
         prediction = model([image_tensor.to(device)])[0]
+
+    prediction = restore_prediction_to_original(
+        prediction=prediction,
+        original_size=original_size,
+        resize_metadata=resize_metadata,
+    )
 
     kept_indices = get_kept_indices(
         prediction=prediction,
@@ -369,6 +448,7 @@ def infer_one(model, image_path, output_dir, device, args):
         original_size=original_size,
         model_input_size=model_input_size,
         mask_paths=mask_paths,
+        resize_metadata=resize_metadata,
     )
 
     json_path.write_text(json.dumps(results, indent=2))
@@ -411,7 +491,7 @@ def main():
     parser.add_argument("--checkpoint", required=True, help="Path to model checkpoint.")
     parser.add_argument("--output-dir", default="outputs/predictions/export", help="Output directory.")
     parser.add_argument("--threshold", type=float, default=0.65, help="Prediction score threshold.")
-    parser.add_argument("--img-size", type=int, default=640, help="Resize image to this square size. Use 0 to keep original size.")
+    parser.add_argument("--img-size", type=int, default=640, help="Letterbox image to this model input size. Use 0 to keep original size.")
     parser.add_argument("--show-scores", action="store_true", help="Show confidence score below FDI label.")
     parser.add_argument("--min-mask-area", type=int, default=100, help="Discard predictions with mask area below this value.")
     parser.add_argument("--keep-best-per-fdi", action="store_true", help="Keep only the highest-scoring prediction for each FDI tooth number.")
