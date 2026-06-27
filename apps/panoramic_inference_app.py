@@ -338,6 +338,50 @@ def render_result_charts(df):
         )
         st.plotly_chart(fig_confidence, use_container_width=True)
 
+
+    expected_fdis = (
+        list(range(11, 19))
+        + list(range(21, 29))
+        + list(range(31, 39))
+        + list(range(41, 49))
+    )
+    detected_fdis = set(df["fdi"].astype(int).tolist())
+    fdi_status_df = pd.DataFrame({
+        "FDI": expected_fdis,
+        "Status": [
+            "Detected" if fdi in detected_fdis else "Missing"
+            for fdi in expected_fdis
+        ],
+    })
+
+    st.markdown("#### Detected vs missing FDI")
+    status_counts = (
+        fdi_status_df["Status"]
+        .value_counts()
+        .rename_axis("Status")
+        .reset_index(name="Count")
+    )
+    fig_status = go.Figure()
+    fig_status.add_bar(
+        x=status_counts["Status"],
+        y=status_counts["Count"],
+        text=status_counts["Count"],
+        textposition="outside",
+    )
+    fig_status.update_layout(
+        xaxis_title="Status",
+        yaxis_title="Number of FDI positions",
+        height=320,
+        margin=dict(l=10, r=10, t=20, b=10),
+    )
+    st.plotly_chart(fig_status, use_container_width=True)
+
+    missing_fdis = fdi_status_df[fdi_status_df["Status"] == "Missing"]["FDI"].tolist()
+    if missing_fdis:
+        st.caption("Missing FDI positions: " + ", ".join(str(x) for x in missing_fdis))
+    else:
+        st.caption("No missing FDI positions.")
+
     low_confidence = df[df["score"] < 0.75].sort_values("score")
 
     if not low_confidence.empty:
