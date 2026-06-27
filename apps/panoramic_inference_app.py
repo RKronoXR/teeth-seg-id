@@ -255,41 +255,88 @@ def render_result_charts(df):
 
     with chart_col1:
         st.markdown("#### Confidence by FDI")
-        score_chart = (
-            df.sort_values("fdi")
-            .set_index("tooth")[["score"]]
+        score_df = df.sort_values("fdi")
+        fig_score = go.Figure()
+        fig_score.add_bar(
+            x=score_df["tooth"],
+            y=score_df["score"],
+            text=score_df["score"].round(2),
+            textposition="outside",
         )
-        st.bar_chart(score_chart, use_container_width=True)
+        fig_score.update_layout(
+            xaxis_title="FDI",
+            yaxis_title="Confidence",
+            yaxis_range=[0, 1.05],
+            height=360,
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig_score, use_container_width=True)
 
     with chart_col2:
         st.markdown("#### Mask area by FDI")
-        area_chart = (
-            df.sort_values("fdi")
-            .set_index("tooth")[["mask_area_pixels"]]
+        area_df = df.sort_values("fdi")
+        fig_area = go.Figure()
+        fig_area.add_bar(
+            x=area_df["tooth"],
+            y=area_df["mask_area_pixels"],
+            text=area_df["mask_area_pixels"],
+            textposition="outside",
         )
-        st.bar_chart(area_chart, use_container_width=True)
+        fig_area.update_layout(
+            xaxis_title="FDI",
+            yaxis_title="Mask area (pixels)",
+            height=360,
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig_area, use_container_width=True)
 
     chart_col3, chart_col4 = st.columns(2)
 
     with chart_col3:
         st.markdown("#### Detected teeth by quadrant")
-        quadrant_chart = (
+        quadrant_df = (
             df.groupby("quadrant", observed=False)
             .size()
             .rename("count")
-            .to_frame()
+            .reset_index()
         )
-        st.bar_chart(quadrant_chart, use_container_width=True)
+        fig_quadrant = go.Figure()
+        fig_quadrant.add_bar(
+            x=quadrant_df["quadrant"],
+            y=quadrant_df["count"],
+            text=quadrant_df["count"],
+            textposition="outside",
+        )
+        fig_quadrant.update_layout(
+            xaxis_title="Quadrant",
+            yaxis_title="Count",
+            height=360,
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig_quadrant, use_container_width=True)
 
     with chart_col4:
         st.markdown("#### Confidence distribution")
-        confidence_chart = (
+        confidence_df = (
             df.groupby("confidence_band", observed=False)
             .size()
             .rename("count")
-            .to_frame()
+            .reset_index()
         )
-        st.bar_chart(confidence_chart, use_container_width=True)
+        fig_confidence = go.Figure()
+        fig_confidence.add_bar(
+            x=confidence_df["confidence_band"].astype(str),
+            y=confidence_df["count"],
+            text=confidence_df["count"],
+            textposition="outside",
+        )
+        fig_confidence.update_layout(
+            xaxis_title="Confidence band",
+            yaxis_title="Count",
+            height=360,
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig_confidence, use_container_width=True)
 
     low_confidence = df[df["score"] < 0.75].sort_values("score")
 
