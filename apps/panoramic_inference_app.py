@@ -283,7 +283,7 @@ def render_automatic_findings_summary(df):
     )
 
 
-def render_result_charts(df):
+def render_result_charts(df, key_prefix='main'):
     if df.empty:
         st.warning("No predictions available for charts.")
         return
@@ -326,7 +326,7 @@ def render_result_charts(df):
             height=360,
             margin=dict(l=10, r=10, t=20, b=10),
         )
-        st.plotly_chart(fig_score, use_container_width=True)
+        st.plotly_chart(fig_score, use_container_width=True, key=f'{key_prefix}_confidence_by_fdi_chart')
 
     with chart_col2:
         st.markdown("#### Mask area by FDI")
@@ -344,7 +344,7 @@ def render_result_charts(df):
             height=360,
             margin=dict(l=10, r=10, t=20, b=10),
         )
-        st.plotly_chart(fig_area, use_container_width=True)
+        st.plotly_chart(fig_area, use_container_width=True, key=f'{key_prefix}_mask_area_by_fdi_chart')
 
     chart_col3, chart_col4 = st.columns(2)
 
@@ -369,7 +369,7 @@ def render_result_charts(df):
             height=360,
             margin=dict(l=10, r=10, t=20, b=10),
         )
-        st.plotly_chart(fig_quadrant, use_container_width=True)
+        st.plotly_chart(fig_quadrant, use_container_width=True, key=f'{key_prefix}_detected_by_quadrant_chart')
 
     with chart_col4:
         st.markdown("#### Confidence distribution")
@@ -392,7 +392,7 @@ def render_result_charts(df):
             height=360,
             margin=dict(l=10, r=10, t=20, b=10),
         )
-        st.plotly_chart(fig_confidence, use_container_width=True)
+        st.plotly_chart(fig_confidence, use_container_width=True, key=f'{key_prefix}_confidence_distribution_chart')
 
 
     expected_fdis = (
@@ -430,7 +430,7 @@ def render_result_charts(df):
         height=320,
         margin=dict(l=10, r=10, t=20, b=10),
     )
-    st.plotly_chart(fig_status, use_container_width=True)
+    st.plotly_chart(fig_status, use_container_width=True, key=f'{key_prefix}_detected_missing_fdi_chart')
 
     missing_fdis = fdi_status_df[fdi_status_df["Status"] == "Missing"]["FDI"].tolist()
     if missing_fdis:
@@ -474,7 +474,7 @@ def render_result_charts(df):
         height=320,
         margin=dict(l=10, r=10, t=20, b=10),
     )
-    st.plotly_chart(fig_status, use_container_width=True)
+    st.plotly_chart(fig_status, use_container_width=True, key=f'{key_prefix}_detected_missing_fdi_chart')
 
     missing_fdis = fdi_status_df[fdi_status_df["Status"] == "Missing"]["FDI"].tolist()
     if missing_fdis:
@@ -835,9 +835,8 @@ if "last_output_dir" in st.session_state:
 
     if not df.empty:
         render_automatic_findings_summary(df)
-        st.subheader("Predicted teeth table")
-        st.dataframe(df, use_container_width=True)
-        render_result_charts(df)
+        with st.expander("Predicted teeth table", expanded=False):
+            st.dataframe(df, use_container_width=True)
 
     if outputs["report"]:
         st.subheader("Report")
