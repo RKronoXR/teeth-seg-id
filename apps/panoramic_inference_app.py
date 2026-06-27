@@ -382,6 +382,50 @@ def render_result_charts(df):
     else:
         st.caption("No missing FDI positions.")
 
+
+    expected_fdis = (
+        list(range(11, 19))
+        + list(range(21, 29))
+        + list(range(31, 39))
+        + list(range(41, 49))
+    )
+    detected_fdis = set(df["fdi"].astype(int).tolist())
+    fdi_status_df = pd.DataFrame({
+        "FDI": expected_fdis,
+        "Status": [
+            "Detected" if fdi in detected_fdis else "Missing"
+            for fdi in expected_fdis
+        ],
+    })
+
+    st.markdown("#### Detected vs missing FDI")
+    status_counts = (
+        fdi_status_df["Status"]
+        .value_counts()
+        .rename_axis("Status")
+        .reset_index(name="Count")
+    )
+    fig_status = go.Figure()
+    fig_status.add_bar(
+        x=status_counts["Status"],
+        y=status_counts["Count"],
+        text=status_counts["Count"],
+        textposition="outside",
+    )
+    fig_status.update_layout(
+        xaxis_title="Status",
+        yaxis_title="Number of FDI positions",
+        height=320,
+        margin=dict(l=10, r=10, t=20, b=10),
+    )
+    st.plotly_chart(fig_status, use_container_width=True)
+
+    missing_fdis = fdi_status_df[fdi_status_df["Status"] == "Missing"]["FDI"].tolist()
+    if missing_fdis:
+        st.caption("Missing FDI positions: " + ", ".join(str(x) for x in missing_fdis))
+    else:
+        st.caption("No missing FDI positions.")
+
     low_confidence = df[df["score"] < 0.75].sort_values("score")
 
     if not low_confidence.empty:
@@ -402,10 +446,18 @@ def get_selected_tooth_row(df):
     df = df.sort_values("fdi").copy()
     fdi_options = df["fdi"].astype(int).tolist()
 
+    selected_from_state = st.session_state.get("selected_fdi", fdi_options[0])
+    if selected_from_state not in fdi_options:
+        selected_from_state = fdi_options[0]
+
     selected_fdi = st.selectbox(
         "Select FDI tooth for detailed review",
         fdi_options,
+        index=fdi_options.index(selected_from_state),
+        key="selected_fdi_select",
     )
+
+    st.session_state["selected_fdi"] = int(selected_fdi)
 
     return df[df["fdi"].astype(int) == int(selected_fdi)].iloc[0]
 
