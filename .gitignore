@@ -38,3 +38,4 @@ system_report.txt
 # Local checks
 system_check.sh
 outputs/
+PROJECT_STATUS.md
