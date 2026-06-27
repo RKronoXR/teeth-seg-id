@@ -661,6 +661,27 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    .stApp {
+        background: radial-gradient(circle at top left, #201218 0, #0e1117 35%, #0e1117 100%);
+    }
+    h1, h2, h3 {
+        letter-spacing: -0.03em;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 1rem;
+        background: rgba(20, 24, 32, 0.78);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    }
+    .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #ff4b4b, #ff6b6b);
+        border: 0;
+        color: white;
+        font-weight: 700;
+    }
     .prediction-wrapper {
         width: 100%;
         display: flex;
@@ -688,7 +709,7 @@ st.markdown(
 
 st.title("Panoramic Tooth Segmentation and FDI Identification")
 
-st.write(
+st.caption(
     "Upload a panoramic radiograph, choose a model checkpoint, "
     "and run tooth segmentation with FDI numbering."
 )
@@ -701,66 +722,71 @@ if not checkpoints:
 
 checkpoint_labels = [str(p.relative_to(PROJECT_ROOT)) for p in checkpoints]
 
-selected_checkpoint_label = st.selectbox(
-    "Model checkpoint",
-    checkpoint_labels,
-    index=0,
-)
+layout_left, layout_right = st.columns([1, 1], gap="large")
+
+with layout_left:
+    with st.container(border=True):
+        st.subheader("Step 1: Configuration & Input")
+
+        selected_checkpoint_label = st.selectbox(
+            "Model checkpoint",
+            checkpoint_labels,
+            index=0,
+        )
+
+        uploaded_file = st.file_uploader(
+            "Upload panoramic image",
+            type=["jpg", "jpeg", "png", "tif", "tiff", "bmp"],
+        )
+
+        manual_path = st.text_input(
+            "Or use image path on Spark",
+            value="",
+            placeholder="/home/rkronoxr/Downloads/mi_panoramica.jpg",
+        )
 
 checkpoint_path = PROJECT_ROOT / selected_checkpoint_label
 
-col1, col2 = st.columns(2)
+with layout_right:
+    with st.container(border=True):
 
-with col1:
-    uploaded_file = st.file_uploader(
-        "Upload panoramic image",
-        type=["jpg", "jpeg", "png", "tif", "tiff", "bmp"],
-    )
+        st.subheader("Step 2: Inference & Display Options")
 
-with col2:
-    manual_path = st.text_input(
-        "Or use image path on Spark",
-        value="",
-        placeholder="/home/rkronoxr/Downloads/mi_panoramica.jpg",
-    )
+        col1, col2, col3 = st.columns(3)
 
-st.subheader("Inference options")
+        with col1:
+            threshold = st.slider("Threshold", 0.05, 0.95, 0.65, 0.05)
+            min_mask_area = st.number_input("Minimum mask area", min_value=0, value=100, step=50)
 
-col1, col2, col3 = st.columns(3)
+        with col2:
+            preprocess = st.selectbox("Preprocess for inference", ["none", "clahe", "equalize"], index=1)
+            keep_best_per_fdi = st.checkbox("Keep best per FDI", value=True)
 
-with col1:
-    threshold = st.slider("Threshold", 0.05, 0.95, 0.65, 0.05)
-    min_mask_area = st.number_input("Minimum mask area", min_value=0, value=100, step=50)
+        with col3:
+            show_scores = st.checkbox("Show scores", value=True)
+            display_preprocessed = st.checkbox("Display preprocessed image", value=False)
 
-with col2:
-    preprocess = st.selectbox("Preprocess for inference", ["none", "clahe", "equalize"], index=1)
-    keep_best_per_fdi = st.checkbox("Keep best per FDI", value=True)
+        st.markdown("#### Display options")
 
-with col3:
-    show_scores = st.checkbox("Show scores", value=True)
-    display_preprocessed = st.checkbox("Display preprocessed image", value=False)
+        display_col1, display_col2 = st.columns(2)
 
-st.subheader("Display options")
+        with display_col1:
+            display_mode = st.selectbox(
+                "Prediction display mode",
+                ["Interactive zoom/pan", "Fixed width", "Fit page width", "Scrollable original"],
+                index=0,
+            )
 
-display_col1, display_col2 = st.columns(2)
+        with display_col2:
+            preview_width = st.slider("Preview width (px)", 400, 1600, 850, 50)
 
-with display_col1:
-    display_mode = st.selectbox(
-        "Prediction display mode",
-        ["Interactive zoom/pan", "Fixed width", "Fit page width", "Scrollable original"],
-        index=0,
-    )
+        viewer_content = st.radio(
+            "Viewer content",
+            ["Original image + selected FDI highlight", "Full segmentation overlay"],
+            horizontal=True,
+        )
 
-with display_col2:
-    preview_width = st.slider("Preview width (px)", 400, 1600, 850, 50)
-
-viewer_content = st.radio(
-    "Viewer content",
-    ["Original image + selected FDI highlight", "Full segmentation overlay"],
-    horizontal=True,
-)
-
-run_button = st.button("Run inference", type="primary")
+        run_button = st.button("Run Segmentation & Identification", type="primary")
 
 if run_button:
     if uploaded_file is None and not manual_path.strip():
@@ -800,7 +826,6 @@ if "last_output_dir" in st.session_state:
     outputs = find_outputs(output_dir)
 
     st.success("Inference completed.")
-    st.write(f"Output directory: `{output_dir}`")
 
     df = pd.read_csv(outputs["csv"]) if outputs["csv"] else pd.DataFrame()
     selected_row = None
@@ -810,28 +835,30 @@ if "last_output_dir" in st.session_state:
         result_json = json.loads(outputs["json"].read_text())
         source_image_for_viewer = Path(result_json["image"])
 
-    result_left, result_right = st.columns([3, 1])
+    result_left, result_right = st.columns([3, 1], gap="large")
 
     with result_right:
-        if not df.empty:
-            st.subheader("Tooth selection")
-            selected_row = get_selected_tooth_row(df)
-            render_tooth_review_panel(selected_row)
-            render_clinical_correction_panel(df, selected_row)
+        with st.container(border=True):
+            if not df.empty:
+                st.subheader("Tooth selection")
+                selected_row = get_selected_tooth_row(df)
+                render_tooth_review_panel(selected_row)
+                render_clinical_correction_panel(df, selected_row)
 
     with result_left:
-        if outputs["png"]:
-            st.subheader("Prediction")
-            if display_mode == "Interactive zoom/pan":
-                if viewer_content == "Full segmentation overlay":
-                    render_interactive_prediction_image(outputs["png"], selected_row=None)
-                    st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. Showing all segmentation masks.")
+        with st.container(border=True):
+            if outputs["png"]:
+                st.subheader("Segmentation Results")
+                if display_mode == "Interactive zoom/pan":
+                    if viewer_content == "Full segmentation overlay":
+                        render_interactive_prediction_image(outputs["png"], selected_row=None)
+                        st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. Showing all segmentation masks.")
+                    else:
+                        render_interactive_prediction_image(source_image_for_viewer, selected_row=selected_row)
+                        st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. The selected FDI is highlighted in green.")
                 else:
-                    render_interactive_prediction_image(source_image_for_viewer, selected_row=selected_row)
-                    st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. The selected FDI is highlighted in green.")
-            else:
-                render_prediction_image(outputs["png"], display_mode, preview_width)
-                st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
+                    render_prediction_image(outputs["png"], display_mode, preview_width)
+                    st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
 
     if not df.empty:
         render_automatic_findings_summary(df)
@@ -843,7 +870,7 @@ if "last_output_dir" in st.session_state:
         report_text = outputs["report"].read_text()
         st.markdown(report_text)
 
-    st.subheader("Downloads")
+    st.subheader("Export Results")
 
     zip_path = create_output_zip(output_dir)
 
