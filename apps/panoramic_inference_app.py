@@ -323,28 +323,54 @@ def render_tooth_review_panel(row):
     if row is None:
         return
 
-    st.subheader("Interactive tooth review")
+    fdi = int(row["fdi"])
+    score = float(row["score"])
+    area = int(row["mask_area_pixels"])
+    quadrant_id = str(fdi)[0]
+    quadrant_label = {
+        "1": "Q1 upper right",
+        "2": "Q2 upper left",
+        "3": "Q3 lower left",
+        "4": "Q4 lower right",
+    }.get(quadrant_id, "Unknown")
 
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("FDI", int(row["fdi"]))
-    col2.metric("Confidence", f"{row['score']:.3f}")
-    col3.metric("Mask area", int(row["mask_area_pixels"]))
-    col4.metric("Class ID", int(row["class_id"]))
+    if score >= 0.85:
+        confidence_band = "High"
+    elif score >= 0.65:
+        confidence_band = "Medium"
+    else:
+        confidence_band = "Low"
 
-    st.write("Bounding box")
-    st.json({
-        "x1": float(row["bbox_x1"]),
-        "y1": float(row["bbox_y1"]),
-        "x2": float(row["bbox_x2"]),
-        "y2": float(row["bbox_y2"]),
-        "centroid_x": float(row["centroid_x"]),
-        "centroid_y": float(row["centroid_y"]),
-    })
+    review_flag = "Review recommended" if score < 0.75 else "No immediate review flag"
+
+    st.subheader("Selected tooth")
+
+    st.metric("FDI", fdi)
+    st.metric("Confidence", f"{score:.3f}")
+    st.write(f"**Confidence band:** {confidence_band}")
+    st.write(f"**Review flag:** {review_flag}")
+    st.write(f"**Quadrant:** {quadrant_label}")
+    st.write(f"**Mask area:** {area:,} pixels")
+
+    st.markdown("**Coordinates**")
+    coord_df = pd.DataFrame(
+        {
+            "Metric": ["Centroid x", "Centroid y", "BBox x1", "BBox y1", "BBox x2", "BBox y2"],
+            "Value": [
+                round(float(row["centroid_x"]), 1),
+                round(float(row["centroid_y"]), 1),
+                round(float(row["bbox_x1"]), 1),
+                round(float(row["bbox_y1"]), 1),
+                round(float(row["bbox_x2"]), 1),
+                round(float(row["bbox_y2"]), 1),
+            ],
+        }
+    )
+    st.dataframe(coord_df, hide_index=True, use_container_width=True)
 
     mask_path = Path(str(row["mask_path"]))
     if mask_path.exists():
-        st.image(str(mask_path), caption=f"Binary mask for FDI {int(row['fdi'])}", use_container_width=True)
+        st.image(str(mask_path), caption=f"Binary mask for FDI {fdi}", use_container_width=True)
     else:
         st.info("Mask file not found for preview.")
 
