@@ -227,6 +227,62 @@ def prepare_results_dataframe(df):
     return df
 
 
+def render_automatic_findings_summary(df):
+    if df.empty:
+        return
+
+    expected_fdis = (
+        list(range(11, 19))
+        + list(range(21, 29))
+        + list(range(31, 39))
+        + list(range(41, 49))
+    )
+
+    detected_fdis = set(df["fdi"].astype(int).tolist())
+    missing_fdis = [fdi for fdi in expected_fdis if fdi not in detected_fdis]
+    low_confidence_df = df[df["score"] < 0.75].sort_values("score")
+    mean_score = float(df["score"].mean())
+
+    st.subheader("Automatic findings summary")
+
+    summary_lines = [
+        f"- Detected teeth: {len(df)} / 32.",
+        f"- Missing FDI positions: {len(missing_fdis)}.",
+        f"- Mean confidence: {mean_score:.2f}.",
+        f"- Teeth requiring confidence review: {len(low_confidence_df)}.",
+    ]
+
+    if missing_fdis:
+        summary_lines.append(
+            "- Missing FDI list: " + ", ".join(str(fdi) for fdi in missing_fdis) + "."
+        )
+
+    if not low_confidence_df.empty:
+        low_items = [
+            f"{int(row.fdi)} ({float(row.score):.2f})"
+            for row in low_confidence_df.itertuples()
+        ]
+        summary_lines.append(
+            "- Low-confidence FDI list: " + ", ".join(low_items) + "."
+        )
+
+    summary_text = "\n".join(summary_lines)
+
+    st.markdown(summary_text)
+
+    if "last_output_dir" in st.session_state:
+        summary_path = Path(st.session_state["last_output_dir"]) / "automatic_findings_summary.md"
+        summary_path.write_text(summary_text + "\n")
+        st.caption(f"Saved to: `{summary_path}`")
+
+    st.download_button(
+        label="Download findings summary",
+        data=summary_text.encode("utf-8"),
+        file_name="automatic_findings_summary.md",
+        mime="text/markdown",
+    )
+
+
 def render_result_charts(df):
     if df.empty:
         st.warning("No predictions available for charts.")
@@ -778,6 +834,7 @@ if "last_output_dir" in st.session_state:
                 st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
 
     if not df.empty:
+        render_automatic_findings_summary(df)
         st.subheader("Predicted teeth table")
         st.dataframe(df, use_container_width=True)
         render_result_charts(df)
