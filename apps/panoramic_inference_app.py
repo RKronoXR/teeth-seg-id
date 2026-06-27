@@ -155,11 +155,39 @@ def render_prediction_image(image_path, display_mode, preview_width):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_interactive_prediction_image(image_path):
+def render_interactive_prediction_image(image_path, selected_row=None):
     image = Image.open(image_path).convert("RGB")
     image_np = np.asarray(image)
 
     fig = go.Figure(go.Image(z=image_np))
+
+    if selected_row is not None:
+        x1 = float(selected_row["bbox_x1"])
+        y1 = float(selected_row["bbox_y1"])
+        x2 = float(selected_row["bbox_x2"])
+        y2 = float(selected_row["bbox_y2"])
+        fdi = int(selected_row["fdi"])
+
+        fig.add_shape(
+            type="rect",
+            x0=x1,
+            y0=y1,
+            x1=x2,
+            y1=y2,
+            line=dict(color="lime", width=4),
+            fillcolor="rgba(0,255,0,0.08)",
+        )
+        fig.add_annotation(
+            x=x1,
+            y=y1,
+            text=f"FDI {fdi}",
+            showarrow=False,
+            font=dict(color="white", size=14),
+            bgcolor="rgba(0,120,0,0.85)",
+            bordercolor="lime",
+            borderwidth=1,
+        )
+
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
         dragmode="pan",
@@ -276,11 +304,9 @@ def render_result_charts(df):
         )
 
 
-def render_tooth_review_panel(df):
+def get_selected_tooth_row(df):
     if df.empty:
-        return
-
-    st.subheader("Interactive tooth review")
+        return None
 
     df = df.sort_values("fdi").copy()
     fdi_options = df["fdi"].astype(int).tolist()
@@ -290,8 +316,16 @@ def render_tooth_review_panel(df):
         fdi_options,
     )
 
-    row = df[df["fdi"].astype(int) == int(selected_fdi)].iloc[0]
+    return df[df["fdi"].astype(int) == int(selected_fdi)].iloc[0]
 
+
+def render_tooth_review_panel(row):
+    if row is None:
+        return
+
+    st.subheader("Interactive tooth review")
+
+    
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("FDI", int(row["fdi"]))
     col2.metric("Confidence", f"{row['score']:.3f}")
@@ -416,6 +450,12 @@ with display_col1:
 with display_col2:
     preview_width = st.slider("Preview width (px)", 400, 1600, 850, 50)
 
+viewer_content = st.radio(
+    "Viewer content",
+    ["Original image + selected FDI highlight", "Full segmentation overlay"],
+    horizontal=True,
+)
+
 run_button = st.button("Run inference", type="primary")
 
 if run_button:
@@ -449,25 +489,44 @@ if run_button:
         st.code(result.stderr)
         st.stop()
 
+    st.session_state["last_output_dir"] = str(output_dir)
+
+if "last_output_dir" in st.session_state:
+    output_dir = Path(st.session_state["last_output_dir"])
     outputs = find_outputs(output_dir)
 
     st.success("Inference completed.")
     st.write(f"Output directory: `{output_dir}`")
 
+    df = pd.read_csv(outputs["csv"]) if outputs["csv"] else pd.DataFrame()
+    selected_row = None
+    source_image_for_viewer = outputs["png"]
+
+    if outputs["json"]:
+        result_json = json.loads(outputs["json"].read_text())
+        source_image_for_viewer = Path(result_json["image"])
+
+    if not df.empty:
+        st.subheader("Tooth selection")
+        selected_row = get_selected_tooth_row(df)
+
     if outputs["png"]:
         st.subheader("Prediction")
         if display_mode == "Interactive zoom/pan":
-            render_interactive_prediction_image(outputs["png"])
-            st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view.")
+            if viewer_content == "Full segmentation overlay":
+                render_interactive_prediction_image(outputs["png"], selected_row=None)
+                st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. Showing all segmentation masks.")
+            else:
+                render_interactive_prediction_image(source_image_for_viewer, selected_row=selected_row)
+                st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. The selected FDI is highlighted in green.")
         else:
             render_prediction_image(outputs["png"], display_mode, preview_width)
             st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
 
-    if outputs["csv"]:
+    if not df.empty:
         st.subheader("Predicted teeth table")
-        df = pd.read_csv(outputs["csv"])
         st.dataframe(df, use_container_width=True)
-        render_tooth_review_panel(df)
+        render_tooth_review_panel(selected_row)
         render_result_charts(df)
 
     if outputs["report"]:
