@@ -518,6 +518,78 @@ def render_tooth_review_panel(row):
         st.info("Mask file not found for preview.")
 
 
+def render_clinical_correction_panel(df, selected_row):
+    if selected_row is None or df.empty:
+        return
+
+    expected_fdis = (
+        list(range(11, 19))
+        + list(range(21, 29))
+        + list(range(31, 39))
+        + list(range(41, 49))
+    )
+
+    if "clinical_corrections" not in st.session_state:
+        st.session_state["clinical_corrections"] = []
+
+    predicted_fdi = int(selected_row["fdi"])
+
+    st.subheader("Clinical correction")
+
+    correction_type = st.selectbox(
+        "Correction type",
+        [
+            "Prediction accepted",
+            "Wrong FDI label",
+            "Tooth present but not detected",
+            "False positive prediction",
+            "Other",
+        ],
+        key=f"correction_type_{predicted_fdi}",
+    )
+
+    corrected_fdi = st.selectbox(
+        "Correct FDI",
+        expected_fdis,
+        index=expected_fdis.index(predicted_fdi) if predicted_fdi in expected_fdis else 0,
+        key=f"corrected_fdi_{predicted_fdi}",
+    )
+
+    note = st.text_area(
+        "Clinical note",
+        value="",
+        placeholder="Example: predicted as 37, clinically corresponds to 36.",
+        key=f"clinical_note_{predicted_fdi}",
+    )
+
+    if st.button("Save clinical correction", key=f"save_correction_{predicted_fdi}"):
+        st.session_state["clinical_corrections"].append(
+            {
+                "predicted_fdi": predicted_fdi,
+                "corrected_fdi": int(corrected_fdi),
+                "correction_type": correction_type,
+                "score": float(selected_row["score"]),
+                "mask_area_pixels": int(selected_row["mask_area_pixels"]),
+                "note": note,
+            }
+        )
+        st.success("Clinical correction saved.")
+
+    corrections = st.session_state["clinical_corrections"]
+
+    if corrections:
+        corrections_df = pd.DataFrame(corrections)
+        st.markdown("#### Saved corrections")
+        st.dataframe(corrections_df, use_container_width=True)
+
+        st.download_button(
+            label="Download corrections CSV",
+            data=corrections_df.to_csv(index=False).encode("utf-8"),
+            file_name="clinical_corrections.csv",
+            mime="text/csv",
+        )
+
+
 st.set_page_config(
     page_title="Panoramic Tooth Segmentation",
     layout="wide",
@@ -682,6 +754,7 @@ if "last_output_dir" in st.session_state:
             st.subheader("Tooth selection")
             selected_row = get_selected_tooth_row(df)
             render_tooth_review_panel(selected_row)
+            render_clinical_correction_panel(df, selected_row)
 
     with result_left:
         if outputs["png"]:
