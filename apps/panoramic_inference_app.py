@@ -582,9 +582,16 @@ def render_clinical_correction_panel(df, selected_row):
         st.markdown("#### Saved corrections")
         st.dataframe(corrections_df, use_container_width=True)
 
+        corrections_csv = corrections_df.to_csv(index=False).encode("utf-8")
+
+        if "last_output_dir" in st.session_state:
+            correction_path = Path(st.session_state["last_output_dir"]) / "clinical_corrections.csv"
+            correction_path.write_bytes(corrections_csv)
+            st.caption(f"Saved to: `{correction_path}`")
+
         st.download_button(
             label="Download corrections CSV",
-            data=corrections_df.to_csv(index=False).encode("utf-8"),
+            data=corrections_csv,
             file_name="clinical_corrections.csv",
             mime="text/csv",
         )
