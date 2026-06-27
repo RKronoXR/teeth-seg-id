@@ -506,27 +506,31 @@ if "last_output_dir" in st.session_state:
         result_json = json.loads(outputs["json"].read_text())
         source_image_for_viewer = Path(result_json["image"])
 
-    if not df.empty:
-        st.subheader("Tooth selection")
-        selected_row = get_selected_tooth_row(df)
+    result_left, result_right = st.columns([3, 1])
 
-    if outputs["png"]:
-        st.subheader("Prediction")
-        if display_mode == "Interactive zoom/pan":
-            if viewer_content == "Full segmentation overlay":
-                render_interactive_prediction_image(outputs["png"], selected_row=None)
-                st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. Showing all segmentation masks.")
+    with result_right:
+        if not df.empty:
+            st.subheader("Tooth selection")
+            selected_row = get_selected_tooth_row(df)
+            render_tooth_review_panel(selected_row)
+
+    with result_left:
+        if outputs["png"]:
+            st.subheader("Prediction")
+            if display_mode == "Interactive zoom/pan":
+                if viewer_content == "Full segmentation overlay":
+                    render_interactive_prediction_image(outputs["png"], selected_row=None)
+                    st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. Showing all segmentation masks.")
+                else:
+                    render_interactive_prediction_image(source_image_for_viewer, selected_row=selected_row)
+                    st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. The selected FDI is highlighted in green.")
             else:
-                render_interactive_prediction_image(source_image_for_viewer, selected_row=selected_row)
-                st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view. The selected FDI is highlighted in green.")
-        else:
-            render_prediction_image(outputs["png"], display_mode, preview_width)
-            st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
+                render_prediction_image(outputs["png"], display_mode, preview_width)
+                st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
 
     if not df.empty:
         st.subheader("Predicted teeth table")
         st.dataframe(df, use_container_width=True)
-        render_tooth_review_panel(selected_row)
         render_result_charts(df)
 
     if outputs["report"]:
