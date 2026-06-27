@@ -7,7 +7,9 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 from PIL import Image
 
@@ -151,6 +153,30 @@ def render_prediction_image(image_path, display_mode, preview_width):
     """
 
     st.markdown(html, unsafe_allow_html=True)
+
+
+def render_interactive_prediction_image(image_path):
+    image = Image.open(image_path).convert("RGB")
+    image_np = np.asarray(image)
+
+    fig = go.Figure(go.Image(z=image_np))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        dragmode="pan",
+        height=720,
+    )
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
+    fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False, scaleanchor="x")
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        },
+    )
 
 
 def prepare_results_dataframe(df):
@@ -383,7 +409,7 @@ display_col1, display_col2 = st.columns(2)
 with display_col1:
     display_mode = st.selectbox(
         "Prediction display mode",
-        ["Fixed width", "Fit page width", "Scrollable original"],
+        ["Interactive zoom/pan", "Fixed width", "Fit page width", "Scrollable original"],
         index=0,
     )
 
@@ -430,8 +456,12 @@ if run_button:
 
     if outputs["png"]:
         st.subheader("Prediction")
-        render_prediction_image(outputs["png"], display_mode, preview_width)
-        st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
+        if display_mode == "Interactive zoom/pan":
+            render_interactive_prediction_image(outputs["png"])
+            st.caption("Use mouse wheel to zoom, drag to pan, and double-click to reset the view.")
+        else:
+            render_prediction_image(outputs["png"], display_mode, preview_width)
+            st.caption("Use 'Fixed width' for normal screens. Use 'Scrollable original' if you want to inspect the full-resolution output.")
 
     if outputs["csv"]:
         st.subheader("Predicted teeth table")
