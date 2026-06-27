@@ -39,3 +39,20 @@ system_report.txt
 system_check.sh
 outputs/
 PROJECT_STATUS.md
+
+# Local project workflow notes
+PROJECT_STATUS.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local system reports
+system_report.txt
+
+# Generated outputs
+outputs/
+runs/
+checkpoints/
+logs/
+tensorboard/
